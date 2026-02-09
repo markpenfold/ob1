@@ -12,6 +12,9 @@ export default function ob1Sketch(p) {
     pressureMin: 0.1,
     pressureMax: 1.8,
     strokeColor: [30,30,30],
+    maxIntersections: 2,      // max allowed crossings per gesture
+    flickLength: 40,          // flick length in pixels
+    flickCurve: 0.4,          // how much the flick curves (0 = straight, 1 = strong arc)
   };
 
   let paths = []; // each entry: { points: [...], pressures: [...] }
@@ -314,6 +317,71 @@ export default function ob1Sketch(p) {
     return bristles;
   }
 
+  // ---- Intersection testing ----
+
+  // Line segment intersection: does (a1→a2) cross (b1→b2)?
+  function segmentsIntersect(a1, a2, b1, b2) {
+    let d1x = a2.x - a1.x, d1y = a2.y - a1.y;
+    let d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+    let cross = d1x * d2y - d1y * d2x;
+    if (Math.abs(cross) < 1e-8) return false;
+    let t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / cross;
+    let u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / cross;
+    return t > 0 && t < 1 && u > 0 && u < 1;
+  }
+
+  // Count intersections between a candidate path and all existing paths.
+  // Samples every `step` segments for speed.
+  function countIntersections(candidate, existingPaths, step) {
+    let s = step || 8;
+    let count = 0;
+    for (let path of existingPaths) {
+      let pts = path.points;
+      for (let i = 0; i < candidate.length - 1; i += s) {
+        for (let j = 0; j < pts.length - 1; j += s) {
+          if (segmentsIntersect(candidate[i], candidate[i + 1], pts[j], pts[j + 1])) {
+            count++;
+          }
+        }
+      }
+    }
+    return count;
+  }
+
+  // ---- Flick ending ----
+
+  // Push-then-flick: brief pressure spike (brush pressed into page),
+  // then rapid lift-off with direction change within ±60° forward cone.
+  function appendFlick(points, pressureAnchors, flickLength, flickCurve) {
+    let len = points.length;
+    if (len < 2) return;
+
+    let last = points[len - 1];
+    let prev = points[len - 2];
+    let dir = p.atan2(last.y - prev.y, last.x - prev.x);
+
+    // 1. Push point: tiny step forward with pressure spike
+    let pushDist = flickLength * 0.15;
+    let pushPt = p.createVector(
+      last.x + Math.cos(dir) * pushDist,
+      last.y + Math.sin(dir) * pushDist
+    );
+    points.push(pushPt);
+    pressureAnchors.push(p.random(0.8, 1.2)); // pressure spike
+
+    // 2. Flick point: direction change within ±60° of forward heading
+    let curveSide = p.random() < 0.5 ? 1 : -1;
+    let deflection = curveSide * p.random(p.PI / 6, p.PI / 3) * flickCurve;
+    let flickAngle = dir + deflection;
+
+    let flickDist = flickLength * p.random(0.6, 1.0);
+    points.push(p.createVector(
+      pushPt.x + Math.cos(flickAngle) * flickDist,
+      pushPt.y + Math.sin(flickAngle) * flickDist
+    ));
+    pressureAnchors.push(0.1); // rapid lift-off
+  }
+
   // ---- Symbol generation ----
 
   function generateSymbols(count) {
@@ -330,10 +398,11 @@ export default function ob1Sketch(p) {
       let angle = p.random(p.TWO_PI);
       let pointCount = p.int(p.random(2, 7));
 
-      // Per-gesture pressure range (within global bounds)
       let prMin = p.random(settings.pressureMin, p.lerp(settings.pressureMin, settings.pressureMax, 0.4));
       let prMax = p.random(prMin + 0.1, settings.pressureMax);
 
+      // Build the gesture anchor by anchor, stopping if we cross too many times
+      let crossings = 0;
       for (let i = 0; i < pointCount; i++) {
         angle += p.random(0.1, 9);
         let r = R * p.random(0.1, 0.9);
@@ -341,10 +410,21 @@ export default function ob1Sketch(p) {
           cx + p.cos(angle) * r,
           cy + p.sin(angle) * r
         ));
-        pressureAnchors.push(p.random(prMin, prMax));
-      }
-      pressureAnchors[0] = prMin; // whip-thin start
+        pressureAnchors.push(i === 0 ? prMin : p.random(prMin, prMax));
 
+        // After at least 2 points, check the new segment for crossings
+        if (pts.length >= 2) {
+          let segSmoothed = smoothPath(pts, rez);
+          crossings = countIntersections(segSmoothed, paths);
+          if (crossings > settings.maxIntersections) {
+            // Over budget — stop at this anchor
+            break;
+          }
+        }
+      }
+
+      // Append flick, then smooth the final path
+      appendFlick(pts, pressureAnchors, settings.flickLength, settings.flickCurve);
       let smoothed = smoothPath(pts, rez);
 
       paths.push({ points: smoothed, pressureAnchors: pressureAnchors });
