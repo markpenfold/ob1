@@ -7,7 +7,8 @@ export default function ob1Sketch(p) {
     friction: 0.45,
     splitNum: 18,
     diff: 8,
-    numBristles:5,
+    numBristles: 24,
+    brushType: 'noise', // 'grid' or 'noise'
   };
 
   let paths = []; // each entry: { points: [...], pressures: [...] }
@@ -21,7 +22,9 @@ export default function ob1Sketch(p) {
   p.setup = () => {
     p.createCanvas(700, 700);
     p.background(245);
-    settings.bristles = generateBristleConfig(settings.numBristles);
+    settings.bristles = settings.brushType === 'noise'
+      ? generateNoiseBristleConfig(settings.numBristles)
+      : generateBristleConfig(settings.numBristles);
     brush = new Brush(settings);
     drawPerfectO(350, 350, 250);
     generateSymbols(numGestures);
@@ -98,7 +101,11 @@ export default function ob1Sketch(p) {
       this.velocity = 0;
       this.active = true;
       this.speed = 0;
-      this.pressure= 0.1;
+      this.pressure = 0.1;
+      for (let bristle of this.bristles) {
+        bristle.bx = x;
+        bristle.by = y;
+      }
     }
 
     end() {
@@ -114,7 +121,7 @@ export default function ob1Sketch(p) {
     step(targetX, targetY) {
 
 
-      let pr = 0.1;
+      let pr = 0.6;
 
       if (!this.active) return;
       const s = this.s;
@@ -126,7 +133,7 @@ export default function ob1Sketch(p) {
 
       this.speed = p.sqrt(this.vx * this.vx + this.vy * this.vy);
       this.velocity += this.speed - this.velocity;
-      this.velocity *= 1.8;
+      this.velocity *= 2.1;
 
       if (this.speed < 0.5) return;
 
@@ -160,43 +167,42 @@ export default function ob1Sketch(p) {
         
 
         for (let bristle of this.bristles) {
-      // 2. OUTER BRISTLES FADE: Drop outer bristles aggressively at high speed
-      let bristleDistanceFromCenter = p.abs(bristle.offset);
-      let outerFade = 1.0;
-      
-      if (bristleDistanceFromCenter > 0.3) {
-        // Outer bristles fade out with speed
-        outerFade = p.map(speedFactor, 0, 1, 1.0, 0.0); // High speed = invisible
-        outerFade = p.pow(outerFade, 2); // Aggressive exponential fade
-      }
-      
-      // Skip drawing if faded completely
-      //if (outerFade < 0.1) continue;
-      
-      // Position perpendicular to stroke with collapsed spacing
-      let bristleX = this.x + nx * s.diff * bristle.offset * spacingScale;
-      let bristleY = this.y + ny * s.diff * bristle.offset * spacingScale;
-      
-      // Offset along the stroke direction
-      bristleX += dx * bristle.alongPathOffset* pr;
-      bristleY += dy * bristle.alongPathOffset* pr;
-      
-      let bristleSize = oldR * bristle.sizeMultiplier * outerFade* pr;
+          // Per-bristle lag: each bristle follows the brush center with its own spring
+          bristle.bx += (this.x - bristle.bx) * bristle.lagFactor;
+          bristle.by += (this.y - bristle.by) * bristle.lagFactor;
 
-      
-      drawBristle(bristleX, bristleY, angle, bristleSize, this.speed);
-    }
+          // Outer bristles fade at high speed
+          let outerFade = 1.0;
+          if (bristle.distFromCenter > 0.3) {
+            outerFade = p.map(speedFactor, 0, 1, 1.0, 0.0);
+            outerFade = p.pow(outerFade, 2);
+          }
+
+          // Position: perpendicular (cross) + along stroke from lagged center
+          let bristleX = bristle.bx + nx * s.diff * bristle.crossOffset * spacingScale;
+          let bristleY = bristle.by + ny * s.diff * bristle.crossOffset * spacingScale;
+
+          // Offset along the stroke direction
+          bristleX += dx * bristle.alongOffset * pr;
+          bristleY += dy * bristle.alongOffset * pr;
+
+          let bristleSize = oldR * bristle.sizeMultiplier * outerFade * pr;
+
+          drawBristle(bristleX, bristleY, angle, bristleSize, this.speed);
+        }
       }
     }
   }
 
   function drawBristle(x, y, angle, size, speed) {
+    let speedNormalized = p.constrain(speed / 30, 0, 1);
+    // Skip ~3% of dots at max speed, letting underlying strokes show through
+    if (p.random() < speedNormalized * 0.23) return;
     let col = 30;
     p.push();
     p.translate(x, y);
     p.rotate(angle);
     let w = size;
-    let speedNormalized = p.constrain(speed / 30, 0, 1);
     let eased = p.pow(speedNormalized, 0.3);
     let h = p.map(eased, 0, 1, size, size * 0.65);
     p.fill(col, col, col);
@@ -208,27 +214,95 @@ export default function ob1Sketch(p) {
 
   function generateBristleConfig(numBristles) {
     let bristles = [];
-    for (let b = 0; b < numBristles; b++) {
-      let offset;
-      if (numBristles === 1) {
-        offset = 0;
-      } else {
-        offset = p.map(b, 0, numBristles - 1, -1, 1);
-      }
+    // Elliptical brush head: wider along stroke direction than across it
+    let rows = Math.ceil(Math.sqrt(numBristles * 1.8)); // along stroke (more)
+    let cols = Math.ceil(numBristles / rows);            // across stroke (fewer)
 
-      let sizeMultiplier = 1.0;
-      if (p.abs(offset) > 0.5) {
-        sizeMultiplier = p.random(0.7, 1.0);
-      }
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        // crossOffset (perpendicular): narrow range ±0.6
+        let crossOffset = cols === 1 ? 0 : p.map(col, 0, cols - 1, -0.6, 0.6);
+        // alongOffset (direction of movement): full range ±1.0
+        let alongOffset = rows === 1 ? 0 : p.map(row, 0, rows - 1, -1, 1);
 
-      let alongPathOffset;
-      if (p.abs(offset) < 0.15) {
-        alongPathOffset = p.random(20, 50);
-      } else {
-        alongPathOffset = p.random(-12, 12);
-      }
+        // Ellipse test: wider along stroke (1.0) than across (0.6)
+        let ellipseTest = crossOffset * crossOffset / 0.36 + alongOffset * alongOffset;
+        if (ellipseTest > 1) continue;
 
-      bristles.push({ offset, sizeMultiplier, alongPathOffset });
+        let distFromCenter = p.sqrt(crossOffset * crossOffset + alongOffset * alongOffset);
+
+        // Edge bristles are smaller
+        let sizeMultiplier = p.map(distFromCenter, 0, 1, 1.0, p.random(0.5, 0.8));
+
+        // Organic scatter
+        let jitterCross = p.random(-0.06, 0.06);
+        let jitterAlong = p.random(-0.06, 0.06);
+
+        // Per-bristle lag: edge bristles lag more
+        let lagFactor = p.map(distFromCenter, 0, 1, 0.95, p.random(0.75, 0.88));
+
+        bristles.push({
+          crossOffset: crossOffset + jitterCross,
+          alongOffset: (alongOffset + jitterAlong) * 20,
+          sizeMultiplier,
+          distFromCenter,
+          lagFactor,
+          bx: 0,
+          by: 0,
+        });
+      }
+    }
+    return bristles;
+  }
+
+  // Noise-based bristle config: bristles placed via Perlin noise within a mathematical oval.
+  // Bristle sizes vary smoothly with noise, so pressure scaling produces natural width variation.
+  function generateNoiseBristleConfig(numBristles, seed) {
+    let bristles = [];
+    let noiseSeed = seed || p.random(10000);
+    p.noiseSeed(noiseSeed);
+
+    // Oval semi-axes: a = along stroke (longer), b = across stroke (shorter)
+    let a = 1.0;  // along movement
+    let b = 0.5;  // across movement
+
+    // Oversample candidates, accept those inside the oval
+    let attempts = 0;
+    let maxAttempts = numBristles * 20;
+
+    while (bristles.length < numBristles && attempts < maxAttempts) {
+      attempts++;
+
+      // Candidate position in normalized space
+      let cx = p.random(-a, a);  // along
+      let cy = p.random(-b, b);  // across
+
+      // Oval test: (cx/a)^2 + (cy/b)^2 <= 1
+      let ovalTest = (cx * cx) / (a * a) + (cy * cy) / (b * b);
+      if (ovalTest > 1) continue;
+
+      // Noise-based size: sample 2D Perlin noise at this position
+      let noiseVal = p.noise(cx * 3 + 5, cy * 3 + 5);
+      // Map noise to bristle size — center-biased: noise + proximity to center
+      let distFromCenter = p.sqrt(ovalTest); // 0 at center, 1 at edge
+      let sizeMultiplier = noiseVal * p.map(distFromCenter, 0, 1, 1.0, 0.4);
+
+      // Skip very small bristles (natural gaps in the brush)
+      if (sizeMultiplier < 0.15) continue;
+
+      // Per-bristle lag from noise (smooth variation, not random)
+      let lagNoise = p.noise(cx * 2 + 50, cy * 2 + 50);
+      let lagFactor = p.map(lagNoise * (1 - distFromCenter), 0, 1, 0.75, 0.97);
+
+      bristles.push({
+        crossOffset: cy + p.random(-0.03, 0.03),
+        alongOffset: cx * 20 + p.random(-0.5, 0.5),
+        sizeMultiplier,
+        distFromCenter,
+        lagFactor,
+        bx: 0,
+        by: 0,
+      });
     }
     return bristles;
   }
