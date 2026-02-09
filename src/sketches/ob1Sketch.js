@@ -9,13 +9,16 @@ export default function ob1Sketch(p) {
     diff: 8,
     numBristles: 24,
     brushType: 'noise', // 'grid' or 'noise'
+    pressureMin: 0.1,
+    pressureMax: 1.8,
+    strokeColor: [30,30,30],
   };
 
   let paths = []; // each entry: { points: [...], pressures: [...] }
   let currentPathIndex = 0;
   let pathIndex = 0;
-  let numGestures = 1;
-  let rez = 24;
+  let numGestures = 3;
+  let rez = 100;
 
   // ---- p5 lifecycle ----
 
@@ -44,11 +47,14 @@ export default function ob1Sketch(p) {
     }
 
     if (brush.active && pathIndex < paths[currentPathIndex].points.length) {
+      let cur = paths[currentPathIndex];
       for (let i = 0; i < 3; i++) {
-        let pt = paths[currentPathIndex].points[pathIndex];
-        brush.step(pt.x, pt.y);
+        let pt = cur.points[pathIndex];
+        let progress = pathIndex / (cur.points.length - 1);
+        let pr = samplePressure(cur.pressureAnchors, progress);
+        brush.step(pt.x, pt.y, pr);
         pathIndex++;
-        if (pathIndex >= paths[currentPathIndex].points.length) break;
+        if (pathIndex >= cur.points.length) break;
       }
     } else if (brush.active) {
       brush.end();
@@ -85,7 +91,7 @@ export default function ob1Sketch(p) {
       this.y = 0;
       this.vx = 0;
       this.vy = 0;
-      this.velocity = 0;
+      this.velocity = 10;
       this.r = 0;
       this.active = false;
       this.speed = 0;
@@ -118,10 +124,8 @@ export default function ob1Sketch(p) {
       return this.speed;
     }
 
-    step(targetX, targetY) {
-
-
-      let pr = 0.6;
+    step(targetX, targetY, pr) {
+      pr = pr || 0.1;
 
       if (!this.active) return;
       const s = this.s;
@@ -133,7 +137,7 @@ export default function ob1Sketch(p) {
 
       this.speed = p.sqrt(this.vx * this.vx + this.vy * this.vy);
       this.velocity += this.speed - this.velocity;
-      this.velocity *= 2.1;
+      this.velocity *= 11.1;
 
       if (this.speed < 0.5) return;
 
@@ -148,6 +152,7 @@ export default function ob1Sketch(p) {
         this.y += this.vy / s.splitNum;
 
         oldR += (this.r - oldR) / s.splitNum;
+
         oldR = p.max(oldR, 0.1);
 
         let angle = p.atan2(this.y - prevY, this.x - prevX);
@@ -186,26 +191,28 @@ export default function ob1Sketch(p) {
           bristleX += dx * bristle.alongOffset * pr;
           bristleY += dy * bristle.alongOffset * pr;
 
-          let bristleSize = oldR * bristle.sizeMultiplier * outerFade * pr;
+          // Taper at low speed to prevent blobby corners
+          let cornerTaper = p.constrain(p.map(this.speed, 0.5, 4, 0.3, 1.0), 0.3, 1.0);
+          let bristleSize = oldR * bristle.sizeMultiplier * outerFade * pr * cornerTaper;
 
-          drawBristle(bristleX, bristleY, angle, bristleSize, this.speed);
+          drawBristle(bristleX, bristleY, angle, bristleSize, this.speed, s.strokeColor);
         }
       }
     }
   }
 
-  function drawBristle(x, y, angle, size, speed) {
+  function drawBristle(x, y, angle, size, speed, color) {
     let speedNormalized = p.constrain(speed / 30, 0, 1);
     // Skip ~3% of dots at max speed, letting underlying strokes show through
     if (p.random() < speedNormalized * 0.23) return;
-    let col = 30;
+    let c = color || [30, 30, 30];
     p.push();
     p.translate(x, y);
     p.rotate(angle);
     let w = size;
     let eased = p.pow(speedNormalized, 0.3);
     let h = p.map(eased, 0, 1, size, size * 0.65);
-    p.fill(col, col, col);
+    p.fill(c[0], c[1], c[2]);
     p.ellipse(0, 0, w, h);
     p.pop();
   }
@@ -321,7 +328,11 @@ export default function ob1Sketch(p) {
       let pts = [];
       let pressureAnchors = [];
       let angle = p.random(p.TWO_PI);
-      let pointCount = p.int(p.random(2, 12));
+      let pointCount = p.int(p.random(2, 7));
+
+      // Per-gesture pressure range (within global bounds)
+      let prMin = p.random(settings.pressureMin, p.lerp(settings.pressureMin, settings.pressureMax, 0.4));
+      let prMax = p.random(prMin + 0.1, settings.pressureMax);
 
       for (let i = 0; i < pointCount; i++) {
         angle += p.random(0.1, 9);
@@ -330,25 +341,61 @@ export default function ob1Sketch(p) {
           cx + p.cos(angle) * r,
           cy + p.sin(angle) * r
         ));
-        pressureAnchors.push(p.random(0.1, 1.0));
+        pressureAnchors.push(p.random(prMin, prMax));
       }
+      pressureAnchors[0] = prMin; // whip-thin start
 
       let smoothed = smoothPath(pts, rez);
-      let pressures = interpolatePressure(pressureAnchors, 12);
 
-      paths.push({ points: smoothed, pressures: pressures });
+      paths.push({ points: smoothed, pressureAnchors: pressureAnchors });
     }
   }
 
-  function interpolatePressure(anchors, resolution) {
-    let result = [];
-    for (let i = 0; i < anchors.length - 1; i++) {
-      for (let j = 0; j < resolution; j++) {
-        let t = j / resolution;
-        result.push(p.lerp(anchors[i], anchors[i + 1], t));
-      }
+  // Attempt to solve cubic bezier x(t) = target using Newton's method,
+  // then return y(t). Control points: (0,0), (x1,y1), (x2,y2), (1,1).
+  function cubicBezierEase(target, x1, y1, x2, y2) {
+    // Bezier coefficients for x(t)
+    let ax = 3 * x1 - 3 * x2 + 1;
+    let bx = 3 * x2 - 6 * x1;
+    let cx = 3 * x1;
+
+    // Newton's method: solve x(t) = target for t
+    let t = target; // initial guess
+    for (let i = 0; i < 8; i++) {
+      let xt = ((ax * t + bx) * t + cx) * t - target;
+      let dxt = (3 * ax * t + 2 * bx) * t + cx;
+      if (Math.abs(dxt) < 1e-6) break;
+      t -= xt / dxt;
     }
-    return result;
+    t = Math.max(0, Math.min(1, t));
+
+    // Evaluate y(t)
+    let ay = 3 * y1 - 3 * y2 + 1;
+    let by = 3 * y2 - 6 * y1;
+    let cy = 3 * y1;
+    return ((ay * t + by) * t + cy) * t;
+  }
+
+  // Evaluate pressure continuously at any progress (0..1) along the path.
+  // No pre-computed array — infinite resolution, no stepping.
+  function samplePressure(anchors, progress, transitionPoint, curve) {
+    let tp = transitionPoint || 0.4;
+    let cv = curve || [0.7, 0.0, 0.3, 1.0];
+
+    let numSegments = anchors.length - 1;
+    let scaled = progress * numSegments;
+    let seg = Math.min(Math.floor(scaled), numSegments - 1);
+    let t = scaled - seg; // 0..1 within this segment
+
+    let from = anchors[seg];
+    let to = anchors[seg + 1];
+
+    if (t < tp) {
+      return from;
+    }
+    let localT = (t - tp) / (1 - tp);
+    let eased = cubicBezierEase(localT, cv[0], cv[1], cv[2], cv[3]);
+    return p.lerp(from, to, eased);
   }
 
   // ---- Path smoothing ----
