@@ -7,7 +7,7 @@ export default function ob1Sketch(p) {
     friction: 0.45,
     splitNum: 18,
     diff: 8,
-    numBristles:5,
+    numBristles:12,
   };
 
   let paths = []; // each entry: { points: [...], pressures: [...] }
@@ -113,8 +113,8 @@ export default function ob1Sketch(p) {
 
     step(targetX, targetY) {
 
-
-      let pr = 0.1;
+      // range 0.03 to 0.25 is good
+      let pr = 0.25;
 
       if (!this.active) return;
       const s = this.s;
