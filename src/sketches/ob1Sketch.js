@@ -328,8 +328,8 @@ export default function ob1Sketch(p) {
       let p3 = pts[p.min(i + 2, pts.length - 1)];
       for (let j = 0; j < resolution; j++) {
         let t = j / resolution;
-        let x = p.curvePoint(p0.x, p1.x, p2.x, p3.x, t);
-        let y = p.curvePoint(p0.y, p1.y, p2.y, p3.y, t);
+        let x = p.splinePoint(p0.x, p1.x, p2.x, p3.x, t);
+        let y = p.splinePoint(p0.y, p1.y, p2.y, p3.y, t);
         result.push(p.createVector(x, y));
       }
     }
