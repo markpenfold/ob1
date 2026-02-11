@@ -21,11 +21,11 @@ export default function ob1Sketch(p) {
   p.setup = () => {
     p.createCanvas(700, 700);
     p.background(245);
-    settings.bristles = generateBristleConfigRANDOM(settings.numBristles);
+    settings.bristles = generateBristleConfigROUND(settings.numBristles);
     brush = new Brush(settings);
     drawPerfectO(350, 350, 250);
     numGestures = p.random(2, 4);
-    generateSymbols(numGestures);
+    generateSymbols(1);
   };
 
   p.draw = () => {
@@ -58,7 +58,7 @@ export default function ob1Sketch(p) {
     p.background(245);
     drawPerfectO(350, 350, 250);
     let count = p.random(1, 4);
-    generateSymbols(count);
+    generateSymbols(1);
     currentPathIndex = 0;
     pathIndex = 0;
     p.loop();
@@ -106,6 +106,43 @@ export default function ob1Sketch(p) {
         alongPathOffset: clump.y + p.randomGaussian() * clump.spread * 15,
         sizeMultiplier: p.random(0.2, 1.0)
       });
+    }
+    return bristles;
+  }
+
+  function generateBristleConfigTRI(numBristles) {
+    let bristles = [];
+    // Triangle: wide at back, narrows to a point at front
+    // Back edge at alongPathOffset ~ -10, tip at ~ +20
+    let backY = -10;
+    let tipY = 20;
+    for (let b = 0; b < numBristles; b++) {
+      // Random position along the triangle's depth
+      let t = p.random();
+      let alongPath = p.lerp(backY, tipY, t);
+      // Width narrows linearly from back (1.0) to tip (0.0)
+      let maxWidth = 1.0 - t;
+      let offset = p.random(-maxWidth, maxWidth);
+      // Bristles near tip are smaller
+      let sizeMultiplier = p.lerp(1.0, 0.3, p.pow(t, 0.6));
+      sizeMultiplier *= p.random(0.7, 1.0);
+      bristles.push({ offset, sizeMultiplier, alongPathOffset: alongPath });
+    }
+    return bristles;
+  }
+
+  function generateBristleConfigROUND(numBristles) {
+    let bristles = [];
+    let radius = 0.8;
+    for (let b = 0; b < numBristles; b++) {
+      let angle = p.random(p.TWO_PI);
+      let r = p.sqrt(p.random()) * radius;
+      let offset = p.cos(angle) * r;
+      let alongPath = p.sin(angle) * r * 15;
+      let distFromCenter = r / radius;
+      let sizeMultiplier = p.lerp(1.0, 0.4, distFromCenter);
+      sizeMultiplier *= p.random(0.7, 1.0);
+      bristles.push({ offset, sizeMultiplier, alongPathOffset: alongPath });
     }
     return bristles;
   }
@@ -291,29 +328,60 @@ export default function ob1Sketch(p) {
 
   // ---- Symbol generation ----
 
+  function generateCommaStroke(cx, cy) {
+    let startAngle = p.random(p.TWO_PI);
+    let curveDir = p.random() < 0.5 ? 1 : -1;
+    let length = p.random(30, 100);
+
+    // Build raw curve: start, mid, end
+    let midDist = length * 0.4;
+    let midAngle = startAngle + curveDir * p.random(0.2, 0.5);
+    let endAngle = midAngle + curveDir * p.random(0.3, 0.8);
+
+    let rawPts = [];
+    rawPts.push(p.createVector(cx, cy));
+    rawPts.push(p.createVector(
+      cx + p.cos(midAngle) * midDist,
+      cy + p.sin(midAngle) * midDist
+    ));
+    rawPts.push(p.createVector(
+      cx + p.cos(endAngle) * length,
+      cy + p.sin(endAngle) * length
+    ));
+
+    // Smooth the curve evenly first
+    let smoothed = smoothPathCat(rawPts, 20);
+
+    // Re-sample with dwell at start + accelerating spacing
+    let result = [];
+    let dwellCount = 8;
+    // Dwell: cluster points near start for round press-down
+    for (let i = 0; i < dwellCount; i++) {
+      let t = (i / dwellCount) * 0.05; // stay within first 5% of path
+      let idx = Math.floor(t * (smoothed.length - 1));
+      result.push(smoothed[idx]);
+    }
+    // Accelerate: progressive spacing through the rest
+    let remaining = smoothed.length;
+    let steps = 20;
+    for (let i = 0; i < steps; i++) {
+      let t = i / (steps - 1);
+      t = p.pow(t, 0.5); // sqrt = accelerating (bunched at start, spread at end)
+      let idx = Math.floor(t * (remaining - 1));
+      result.push(smoothed[idx]);
+    }
+
+    return result;
+  }
+
   function generateSymbols(count) {
     paths = [];
     currentPathIndex = 0;
 
     for (let n = 0; n < count; n++) {
-      let cx = p.width / 2;
-      let cy = p.height / 2;
-      let R = 370;
-
-      let pts = [];
-      let angle = p.random(p.TWO_PI);
-      let pointCount = p.int(p.random(2, 7));
-
-      for (let i = 0; i < pointCount; i++) {
-        angle += p.random(0.1, 9);
-        let r = R * p.random(0.1, 0.9);
-        pts.push(p.createVector(
-          cx + p.cos(angle) * r,
-          cy + p.sin(angle) * r
-        ));
-      }
-
-      paths.push(smoothPath(pts, 12));
+      let cx = p.width / 2 + p.random(-100, 100);
+      let cy = p.height / 2 + p.random(-100, 100);
+      paths.push(generateCommaStroke(cx, cy));
     }
   }
 
