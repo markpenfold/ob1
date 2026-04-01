@@ -1,0 +1,73 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { ArrowDownToLine } from "lucide-react";
+import ob1Sketch from "@/sketches/ob1Sketch";
+import classes from "../app/home.module.css";
+
+export default function P5Canvas() {
+  const containerRef = useRef(null);
+  const [animDone, setAnimDone] = useState(false);
+
+  useEffect(() => {
+    let p5Instance;
+    const displaySize = containerRef.current.offsetWidth || 650;
+
+    import("p5").then((p5Module) => {
+      const p5 = p5Module.default;
+      p5Instance = new p5(
+        (p) => ob1Sketch(p, displaySize, () => setAnimDone(true)),
+        containerRef.current
+      );
+    });
+
+    return () => {
+      if (p5Instance) p5Instance.remove();
+    };
+  }, []);
+
+  const handleDownload = () => {
+    const canvas = containerRef.current?.querySelector("canvas");
+    if (!canvas) return;
+
+    // Build a datetime string like 2026-04-01_14-32
+    const now = new Date();
+    const stamp = now.toISOString()
+      .replace('T', '_')
+      .replace(/:/g, '-')
+      .slice(0, 16);
+    const filename = `omenland_${stamp}.png`;
+
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+
+      // Open in new tab so user can preview and choose to save
+      const newTab = window.open(url, '_blank');
+
+      // Fallback: if popups are blocked, trigger a regular download
+      if (!newTab) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+      }
+
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", overflow: "hidden" }}>
+      <div ref={containerRef} className={classes.canvas} />
+      <div className={classes.spacer}>
+        <div className={classes.tooltipWrapper}>
+      <ArrowDownToLine
+        className={`${classes.middle} ${animDone ? classes.visible : ""}`}
+        onClick={animDone ? handleDownload : undefined}
+        aria-label="Download today's logo"
+      />
+      <span className={classes.tooltip}>Download today's logo</span>
+    </div>
+      </div>
+    </div>
+  );
+}

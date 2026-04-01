@@ -1,66 +1,73 @@
-
 const CANVAS_SIZE = 750;
-export default function ob1Sketch(p, displaySize = 750,  onComplete) {
+
+export default function ob2Sketch(p, displaySize = 750, onComplete) {
+
   // ---- State ----
-
   let brush;
-  let settings = {
-    brushSize: 110,
-    spring: 0.4,
-    friction: 0.45,
-    splitNum: 18,
-    diff: 6,
-    numBristles: 64,
-    skipRate: 0.25,
-    velocityMultipier: 2.0,
-  };
-
-
-  function generateSettings(velocityMultipier=2.0, numBristles=64, brushSize=90){
-  let settings = {
-  brushSize: brushSize,
-  spring: 0.4,
-  friction: 0.45,
-  splitNum: 28,
-  diff: 6,
-  numBristles: numBristles,
-  velocityMultipier: velocityMultipier,
-  skipRate:0.25
-  };
-  return settings;
-}
-
-
-
   let paths = [];
   let pathSqueeze = [];
   let currentPathIndex = 0;
   let pathIndex = 0;
-  let numGestures = p.random(2,4);;
+  let numGestures;
+
+  function generateSettings(velocityMultipier = 2.0, numBristles = 64, brushSize = 90) {
+    return {
+      brushSize,
+      spring: 0.4,
+      friction: 0.45,
+      splitNum: 28,
+      diff: 6,
+      numBristles,
+      velocityMultipier,
+      skipRate: 0.25
+    };
+  }
+
+  // ---- Circle path ----
+
+  function generateCirclePath(cx, cy, radius, resolution = 120) {
+    let pts = [];
+    for (let i = 0; i <= resolution; i++) {
+      let angle = (i / resolution) * p.TWO_PI;
+      pts.push(p.createVector(
+        cx + p.cos(angle) * radius,
+        cy + p.sin(angle) * radius
+      ));
+    }
+    return pts;
+  }
+
+  // ---- Init paths ----
+
+  function initPaths() {
+    paths = [generateCirclePath(CANVAS_SIZE / 2, CANVAS_SIZE / 2, 300)];
+    pathSqueeze = [false];
+    currentPathIndex = 0;
+    pathIndex = 0;
+  }
 
   // ---- p5 lifecycle ----
 
   p.setup = () => {
-
     p.pixelDensity(1);
     p.createCanvas(CANVAS_SIZE, CANVAS_SIZE);
     p.canvas.style.width = `${displaySize}px`;
     p.canvas.style.height = `${displaySize}px`;
     p.background(245);
+
     let settingsX = generateSettings();
     settingsX.bristles = generateBristleConfigRANDOM(settingsX.numBristles);
     brush = new OmenBrush(settingsX);
-    drawPerfectO(CANVAS_SIZE/2,CANVAS_SIZE/2, 270);
+
+    initPaths();
     numGestures = p.random(2, 5);
     generateSymbols(numGestures);
   };
 
-
-
   p.draw = () => {
     if (currentPathIndex >= paths.length) {
       p.noLoop();
-      onComplete?.(); 
+      onComplete?.();
       return;
     }
 
@@ -86,23 +93,37 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
 
   p.keyPressed = () => {
     p.background(245);
-    drawPerfectO(CANVAS_SIZE/2,CANVAS_SIZE/2, 300);
+    initPaths();
     let count = p.random(1, 5);
     generateSymbols(count);
-    currentPathIndex = 0;
-    pathIndex = 0;
     p.loop();
   };
 
-  // ---- Circle ----
+  // ---- Symbol generation ----
 
-  function drawPerfectO(cx, cy, radius) {
-    p.noFill();
-    p.stroke(30, 30, 30);
-    //p.stroke(Math.random()*100, Math.random()*100, Math.random()*100);
-    p.strokeWeight(42);
-    p.strokeCap(p.ROUND);
-    p.circle(cx, cy, radius * 2);
+  function generateSymbols(count) {
+    // NOTE: no reset here — appends to existing paths
+    for (let n = 0; n < count; n++) {
+      let cx = p.width / 2;
+      let cy = p.height / 2;
+      let R = 400;
+
+      let pts = [];
+      let angle = p.random(p.TWO_PI);
+      let pointCount = p.int(p.random(2, 8));
+
+      for (let i = 0; i < pointCount; i++) {
+        angle += p.random(0.1, 9);
+        let r = R * p.random(0.1, 0.9);
+        pts.push(p.createVector(
+          cx + p.cos(angle) * r,
+          cy + p.sin(angle) * r
+        ));
+      }
+
+      paths.push(smoothPath(pts, 12));
+      pathSqueeze.push(Math.random() < 0.35);
+    }
   }
 
   // ---- Bristle configs ----
@@ -130,7 +151,6 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
         spread: p.random(0.05, 0.3)
       });
     }
-
     for (let b = 0; b < numBristles; b++) {
       let clump = p.random(clumps);
       bristles.push({
@@ -145,27 +165,15 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
   function generateBristleConfig(numBristles) {
     let bristles = [];
     for (let b = 0; b < numBristles; b++) {
-      let offset;
-      if (numBristles === 1) {
-        offset = 0;
-      } else {
-        offset = p.map(b, 0, numBristles - 1, -1, 1);
-      }
-      let sizeMultiplier = 1.0;
-      if (p.abs(offset) > 0.5) {
-        sizeMultiplier = p.random(0.3, 1.0);
-      }
-      let alongPathOffset;
-      if (p.abs(offset) < 0.25) {
-        alongPathOffset = p.random(-13, 50);
-      } else {
-        alongPathOffset = p.random(-1, 12);
-      }
+      let offset = numBristles === 1 ? 0 : p.map(b, 0, numBristles - 1, -1, 1);
+      let sizeMultiplier = p.abs(offset) > 0.5 ? p.random(0.3, 1.0) : 1.0;
+      let alongPathOffset = p.abs(offset) < 0.25
+        ? p.random(-13, 50)
+        : p.random(-1, 12);
       bristles.push({ offset, sizeMultiplier, alongPathOffset });
     }
     return bristles;
   }
-
 
   // ---- Brush ----
 
@@ -180,10 +188,9 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
       this.r = 0;
       this.active = false;
       this.speed = 0;
-      // Store bristle configuration
-    this.bristles = s.bristles || generateBristleConfigRANDOM(3);
-    this.brushSize = s.brushSize;
-    this.spacingMultiplier = this.brushSize / 20;
+      this.bristles = s.bristles || generateBristleConfigRANDOM(3);
+      this.brushSize = s.brushSize;
+      this.spacingMultiplier = this.brushSize / 20;
     }
 
     begin(x, y) {
@@ -202,21 +209,16 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
       this.active = false;
     }
 
-    getSpeed() {
-      return this.speed;
-    }
+    getSpeed() { return this.speed; }
 
     step(targetX, targetY) {
       if (!this.active) return;
       const s = this.s;
 
-      let RAMP_STEPS = 50;
-      let t = pathIndex / RAMP_STEPS;
+      let t = pathIndex / 50;
       let pr = p.constrain(t, 0, 1);
-
-      let RAMP_OUT_STEPS = 20; //20
       let remaining = paths[currentPathIndex].length - pathIndex;
-      let prOut = p.constrain(remaining / RAMP_OUT_STEPS, 0, 1);
+      let prOut = p.constrain(remaining / 20, 0, 1);
       pr = p.min(pr, prOut);
 
       this.vx += (targetX - this.x) * s.spring;
@@ -253,12 +255,10 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
         p.fill(30);
 
         for (let bristle of this.bristles) {
-          let skipRate = 0.25;
           let speedFactor = p.constrain(this.speed / 100, 0, 1);
-
-          let bristleSqueeze =  1;
-          if (pathSqueeze[currentPathIndex]){
-            (bristleSqueeze = p.sqrt(speedFactor));
+          let bristleSqueeze = 1;
+          if (pathSqueeze[currentPathIndex]) {
+            bristleSqueeze = p.sqrt(speedFactor);
           }
 
           let skipChance = s.skipRate + speedFactor * 0.25;
@@ -266,7 +266,6 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
 
           let bristleX = this.x + nx * s.diff * bristle.offset * this.spacingMultiplier * bristleSqueeze;
           let bristleY = this.y + ny * s.diff * bristle.offset * this.spacingMultiplier * bristleSqueeze;
-
           bristleX += dx * bristle.alongPathOffset * bristleSqueeze;
           bristleY += dy * bristle.alongPathOffset * bristleSqueeze;
 
@@ -278,55 +277,20 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
   }
 
   function drawBristle(x, y, angle, size, speed) {
-
-    
     p.push();
     p.translate(x, y);
     p.rotate(angle);
-    let w = size;
-    let col = 30;
 
     let speedNormalized = p.constrain(speed / 30, 0, 1);
     let opacityDrop = p.pow(speedNormalized, 0.5);
     let alpha = p.map(opacityDrop, 0, 1, 255, 180);
     let eased = p.pow(speedNormalized, 0.3);
     let h = p.map(eased, 0, 1, size, size * 0.65);
-
+    let col = 30;
 
     p.fill(col, col, col, alpha);
-    p.ellipse(0, 0, w, h);
+    p.ellipse(0, 0, size, h);
     p.pop();
-  }
-
-  // ---- Symbol generation ----
-
-  function generateSymbols(count) {
-    paths = [];
-    pathSqueeze = [];
-    currentPathIndex = 0;
-
-    for (let n = 0; n < count; n++) {
-      let cx = p.width / 2;
-      let cy = p.height / 2;
-      let R = 380;
-
-      let pts = [];
-      let angle = p.random(p.TWO_PI);
-      let pointCount = p.int(p.random(2, 8));
-
-      for (let i = 0; i < pointCount; i++) {
-        angle += p.random(0.1, 9);
-        let r = R * p.random(0.1, 0.9);
-        pts.push(p.createVector(
-          cx + p.cos(angle) * r,
-          cy + p.sin(angle) * r
-        ));
-      }
-
-      paths.push(smoothPath(pts, 12));
-      pathSqueeze.push(Math.random() < 0.35); // each symbol gets its own coin flip
-
-    }
   }
 
   // ---- Path smoothing ----
@@ -393,12 +357,8 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
 
   function smoothPath(pts, resolution) {
     let method = p.random(['bezier', 'noise', 'catmull']);
-    if (method == 'bezier') {
-      return smoothPathBez(pts, resolution);
-    } else if (method == 'noise') {
-      return smoothPathNoise(pts, resolution);
-    } else {
-      return smoothPathCat(pts, resolution);
-    }
+    if (method === 'bezier') return smoothPathBez(pts, resolution);
+    if (method === 'noise') return smoothPathNoise(pts, resolution);
+    return smoothPathCat(pts, resolution);
   }
 }

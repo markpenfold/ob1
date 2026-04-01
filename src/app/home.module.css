@@ -1,0 +1,186 @@
+.pageContainer {
+    display: grid;
+    grid-template-rows: auto auto auto auto;
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+.oneTwoOne {
+    display: grid;
+    grid-template-columns: minmax(0, 200px) auto minmax(0, 200px);
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
+.oneTwoThreeFour {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  max-width: 100vw;
+  overflow-x: hidden;
+  padding: 0 var(--space-6, 24px); /* ← stop edge clipping */
+  gap: var(--space-4, 16px);       /* ← breathing room between columns */
+}
+
+.oneTwoThree {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  max-width: 100vw;
+  overflow-x: hidden;
+  padding: 0 var(--space-6, 24px); /* ← stop edge clipping */
+  gap: var(--space-4, 16px);       /* ← breathing room between columns */
+}
+
+.section {
+  display: flex;
+  flex-direction: column;  /* ← stack children vertically */
+  position: relative;      /* ← needed for login absolute positioning */
+}
+
+.spacer {
+    height: 30px;
+    width: 100%;
+}
+
+.middle {
+    margin-left:auto;
+    margin-right: auto;
+    opacity: 0;
+  cursor: pointer;
+  transition: opacity 600ms ease, color 180ms ease;
+}
+
+.middle.visible {
+  opacity: 1;
+}
+
+.middle:hover {
+  color: #555; /* or whatever your hover tone is */
+}
+
+.centre {
+  margin-left:auto;
+  margin-right: auto;
+}
+
+
+
+.iconbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 12px;
+  text-align: center;
+}
+
+/* Force all icons to occupy the same height */
+.iconbox > svg {
+  flex-shrink: 0;
+  height: 92px;  /* ← locks icon row to consistent height */
+  width: auto;
+}
+
+
+.iconHeader {
+
+    font-weight: 600;
+    font-style: italic;
+
+}
+
+
+.omenland {
+    font-size: 92px;
+    margin-left:auto;
+    margin-right: auto;
+    font-weight: 500;
+    text-align: center; 
+}
+
+.login {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 10px;
+  padding-top: 10px;
+}
+
+.canvas {
+    margin-left:auto;
+    margin-right: auto;
+    
+}
+
+.red {
+    background-color: red;
+}
+
+.blue {
+    background-color: blue;
+}
+
+
+.sectionLight {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.sectionDark {
+  display: flex;
+  flex-direction: column;  /* ← stack children vertically */
+  position: relative;      /* ← needed for login absolute positioning */
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.subTitle {
+    font-size: 64px;
+    margin-left:auto;
+    margin-right: auto;
+    font-weight: 500;
+}
+
+.intro {
+    text-align: center;
+    width: 100%;
+    font-size: 18px;
+}
+
+.filmie {
+  width: 50%;
+  margin-left:auto;
+  margin-right: auto;
+  border: 4px solid;
+  border-color: var(--background);
+}
+
+.fontRed { 
+    color: rgb(209, 26, 23);
+    font-style: italic;
+}
+
+.tooltipWrapper {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #333;
+  color: #fff;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.tooltipWrapper:hover .tooltip {
+  opacity: 1;
+}
