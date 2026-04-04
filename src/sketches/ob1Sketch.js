@@ -50,7 +50,7 @@ export default function ob1Sketch(p, displaySize = 750,  onComplete) {
     let settingsX = generateSettings();
     settingsX.bristles = generateBristleConfigRANDOM(settingsX.numBristles);
     brush = new OmenBrush(settingsX);
-    drawPerfectO(CANVAS_SIZE/2,CANVAS_SIZE/2, 270);
+    drawPerfectO(CANVAS_SIZE/2,CANVAS_SIZE/2, 300);
     numGestures = p.random(2, 5);
     generateSymbols(numGestures);
   };
